@@ -1,562 +1,88 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GoldSignal XAUUSD</title>
-
+<title>Deriv Connection Test</title>
 <style>
 body{
-margin:0;
-background:#0d1117;
-color:white;
-font-family:Arial;
-text-align:center
+background:#0d1117;color:white;font-family:Arial;
+text-align:center;padding:30px
 }
-
-.box{
-max-width:500px;
-margin:auto;
-padding:20px
-}
-
-.card{
-background:#161b22;
-border:1px solid #30363d;
-border-radius:18px;
-padding:20px;
-margin-top:20px
-}
-
-#signal{
-font-size:45px;
-font-weight:bold;
-padding:25px;
-border-radius:15px;
-background:#555
-}
-
-.buy{background:#16834b!important}
-.sell{background:#c62828!important}
-.wait{background:#555!important}
-
-.grid{
-display:grid;
-grid-template-columns:1fr 1fr;
-gap:10px;
-margin-top:15px
-}
-
-.item{
-background:#0d1117;
-padding:15px;
-border-radius:10px
-}
-
-.val{
-font-size:20px;
-font-weight:bold;
-margin-top:5px
-}
-
 #status{
-margin:15px 0;
-color:#9da7b3;
-word-break:break-word
+font-size:28px;margin-top:40px;
+padding:25px;border-radius:15px;background:#555
 }
 </style>
 </head>
 
 <body>
 
-<div class="box">
+<h1>DERIV CONNECTION TEST</h1>
 
-<h1>GOLD / XAUUSD</h1>
-
-<div>LIVE BUY / SELL SIGNAL</div>
-
-<div class="card">
-
-<div id="signal" class="wait">
-CONNECTING...
-</div>
-
-<div id="status">
-Starting Deriv connection...
-</div>
-
-<div class="grid">
-
-<div class="item">
-PRICE
-<div id="price" class="val">--</div>
-</div>
-
-<div class="item">
-RSI
-<div id="rsi" class="val">--</div>
-</div>
-
-<div class="item">
-EMA 9
-<div id="ema9" class="val">--</div>
-</div>
-
-<div class="item">
-EMA 21
-<div id="ema21" class="val">--</div>
-</div>
-
-</div>
-
-</div>
-
-</div>
+<div id="status">CONNECTING...</div>
 
 <script>
 
-let ws;
-let candles=[];
-let reconnectTimer=null;
+const status=document.getElementById("status");
 
-const SYMBOL="frxXAUUSD";
-
-function setStatus(text){
-document.getElementById("status").innerText=text;
+function show(text){
+status.innerText=text;
 }
-
-
-/* EMA */
-
-function EMA(values,period){
-
-if(values.length<period)
-return null;
-
-let k=2/(period+1);
-
-let ema=
-values
-.slice(0,period)
-.reduce((a,b)=>a+b,0)/period;
-
-for(let i=period;i<values.length;i++){
-
-ema=
-values[i]*k+
-ema*(1-k);
-
-}
-
-return ema;
-}
-
-
-/* RSI */
-
-function RSI(values,period=14){
-
-if(values.length<=period)
-return null;
-
-let gain=0;
-let loss=0;
-
-for(
-let i=values.length-period;
-i<values.length;
-i++
-){
-
-let difference=
-values[i]-values[i-1];
-
-if(difference>0)
-gain+=difference;
-else
-loss-=difference;
-
-}
-
-if(loss===0)
-return 100;
-
-let rs=gain/loss;
-
-return 100-(100/(1+rs));
-
-}
-
-
-/* ANALYSIS */
-
-function updateSignal(){
-
-if(candles.length<30)
-return;
-
-
-/* Ignore current unfinished candle */
-
-let closed=
-candles.slice(0,-1);
-
-let closes=
-closed.map(x=>x.close);
-
-let last=
-closed[closed.length-1];
-
-let ema9=
-EMA(closes,9);
-
-let ema21=
-EMA(closes,21);
-
-let rsi=
-RSI(closes,14);
-
-if(
-ema9===null ||
-ema21===null ||
-rsi===null
-)
-return;
-
-
-document.getElementById("price")
-.innerText=
-last.close.toFixed(2);
-
-document.getElementById("ema9")
-.innerText=
-ema9.toFixed(2);
-
-document.getElementById("ema21")
-.innerText=
-ema21.toFixed(2);
-
-document.getElementById("rsi")
-.innerText=
-rsi.toFixed(1);
-
-
-/* Support / resistance */
-
-let recent=
-closed.slice(-20,-1);
-
-let resistance=
-Math.max(
-...recent.map(x=>x.high)
-);
-
-let support=
-Math.min(
-...recent.map(x=>x.low)
-);
-
-
-let bullish=
-last.close>last.open;
-
-let bearish=
-last.close<last.open;
-
-
-let signal="WAIT";
-let reason="No complete confirmation";
-
-
-/* BUY */
-
-if(
-ema9>ema21 &&
-rsi>=52 &&
-rsi<=72 &&
-bullish &&
-last.close>resistance
-){
-
-signal="BUY";
-
-reason=
-"Bullish breakout confirmed";
-
-}
-
-
-/* SELL */
-
-else if(
-ema9<ema21 &&
-rsi>=28 &&
-rsi<=48 &&
-bearish &&
-last.close<support
-){
-
-signal="SELL";
-
-reason=
-"Bearish breakdown confirmed";
-
-}
-
-
-let box=
-document.getElementById("signal");
-
-box.innerText=signal;
-
-box.className=
-signal.toLowerCase();
-
-
-setStatus(
-reason+
-" • "+
-new Date(
-last.time*1000
-).toLocaleTimeString()
-);
-
-}
-
-
-/* CONNECT */
-
-function connect(){
-
-if(ws){
 
 try{
-ws.close();
-}catch(e){}
 
-}
-
-setStatus(
-"Connecting to Deriv..."
-);
-
-ws=
-new WebSocket(
+const ws=new WebSocket(
 "wss://ws.binaryws.com/websockets/v3"
 );
 
-
-/* CONNECTED */
-
 ws.onopen=function(){
 
-setStatus(
-"Connected — loading GOLD..."
-);
+show("CONNECTED ✅");
 
-
-/* Historical 1-minute candles */
-
-ws.send(
-JSON.stringify({
-
-ticks_history:SYMBOL,
-
-style:"candles",
-
-granularity:60,
-
-count:200,
-
-end:"latest",
-
-subscribe:1,
-
+ws.send(JSON.stringify({
+active_symbols:"brief",
+product_type:"basic",
 req_id:1
-
-})
-);
-
-
-/* Live price */
-
-ws.send(
-JSON.stringify({
-
-ticks:SYMBOL,
-
-subscribe:1,
-
-req_id:2
-
-})
-);
+}));
 
 };
-
-
-/* MESSAGE */
 
 ws.onmessage=function(event){
 
-let data;
+const d=JSON.parse(event.data);
 
-try{
+if(d.error){
 
-data=
-JSON.parse(event.data);
-
-}
-catch(e){
+show("DERIV ERROR: "+d.error.message);
 
 return;
-
 }
 
+if(d.msg_type==="active_symbols"){
 
-/* API ERROR */
-
-if(data.error){
-
-setStatus(
-"DERIV ERROR: "+
-data.error.message
-);
-
-return;
-
-}
-
-
-/* HISTORICAL CANDLES */
-
-if(
-data.msg_type==="candles"
-){
-
-candles=
-(data.candles||[])
-.map(c=>({
-
-time:Number(c.epoch),
-
-open:Number(c.open),
-
-high:Number(c.high),
-
-low:Number(c.low),
-
-close:Number(c.close)
-
-}));
-
-updateSignal();
-
-}
-
-
-/* LIVE CANDLE */
-
-if(
-data.msg_type==="ohlc" &&
-data.ohlc
-){
-
-let c={
-
-time:Number(data.ohlc.epoch),
-
-open:Number(data.ohlc.open),
-
-high:Number(data.ohlc.high),
-
-low:Number(data.ohlc.low),
-
-close:Number(data.ohlc.close)
-
-};
-
-
-let index=
-candles.findIndex(
-x=>x.time===c.time
-);
-
-
-if(index>=0){
-
-candles[index]=c;
-
-}
-else{
-
-candles.push(c);
-
-}
-
-
-candles=
-candles.slice(-200);
-
-updateSignal();
-
-}
-
-
-/* LIVE PRICE */
-
-if(
-data.msg_type==="tick" &&
-data.tick
-){
-
-let price=
-Number(data.tick.quote);
-
-document.getElementById("price")
-.innerText=
-price.toFixed(2);
+show("DERIV CONNECTED ✅");
 
 }
 
 };
-
-
-/* ERROR */
 
 ws.onerror=function(){
 
-setStatus(
-"WebSocket error — connection unavailable"
-);
+show("WEBSOCKET ERROR ❌");
 
 };
-
-
-/* CLOSED */
 
 ws.onclose=function(){
 
-setStatus(
-"Connection closed — retrying..."
-);
-
-clearTimeout(reconnectTimer);
-
-reconnectTimer=
-setTimeout(
-connect,
-5000
-);
+show("CONNECTION CLOSED ❌");
 
 };
 
+}catch(e){
+
+show("ERROR: "+e.message);
+
 }
-
-
-/* START */
-
-connect();
 
 </script>
 
