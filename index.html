@@ -6,17 +6,64 @@
 <title>GoldSignal XAUUSD</title>
 
 <style>
-body{margin:0;background:#0d1117;color:white;font-family:Arial;text-align:center}
-.box{max-width:500px;margin:auto;padding:20px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:18px;padding:20px;margin-top:20px}
-#signal{font-size:45px;font-weight:bold;padding:25px;border-radius:15px;background:#555}
+body{
+margin:0;
+background:#0d1117;
+color:white;
+font-family:Arial;
+text-align:center
+}
+
+.box{
+max-width:500px;
+margin:auto;
+padding:20px
+}
+
+.card{
+background:#161b22;
+border:1px solid #30363d;
+border-radius:18px;
+padding:20px;
+margin-top:20px
+}
+
+#signal{
+font-size:45px;
+font-weight:bold;
+padding:25px;
+border-radius:15px;
+background:#555
+}
+
 .buy{background:#16834b!important}
 .sell{background:#c62828!important}
 .wait{background:#555!important}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
-.item{background:#0d1117;padding:15px;border-radius:10px}
-.val{font-size:20px;font-weight:bold;margin-top:5px}
-#status{margin:15px 0;color:#9da7b3}
+
+.grid{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:10px;
+margin-top:15px
+}
+
+.item{
+background:#0d1117;
+padding:15px;
+border-radius:10px
+}
+
+.val{
+font-size:20px;
+font-weight:bold;
+margin-top:5px
+}
+
+#status{
+margin:15px 0;
+color:#9da7b3;
+word-break:break-word
+}
 </style>
 </head>
 
@@ -25,13 +72,18 @@ body{margin:0;background:#0d1117;color:white;font-family:Arial;text-align:center
 <div class="box">
 
 <h1>GOLD / XAUUSD</h1>
+
 <div>LIVE BUY / SELL SIGNAL</div>
 
 <div class="card">
 
-<div id="signal" class="wait">CONNECTING...</div>
+<div id="signal" class="wait">
+CONNECTING...
+</div>
 
-<div id="status">Connecting to Deriv...</div>
+<div id="status">
+Starting Deriv connection...
+</div>
 
 <div class="grid">
 
@@ -65,148 +117,250 @@ EMA 21
 
 let ws;
 let candles=[];
-let symbol=null;
+let reconnectTimer=null;
 
-function setStatus(x){
-document.getElementById("status").innerText=x;
+const SYMBOL="frxXAUUSD";
+
+function setStatus(text){
+document.getElementById("status").innerText=text;
 }
 
-function EMA(v,p){
 
-if(v.length<p)return null;
+/* EMA */
 
-let k=2/(p+1);
-let e=v.slice(0,p).reduce((a,b)=>a+b,0)/p;
+function EMA(values,period){
 
-for(let i=p;i<v.length;i++)
-e=v[i]*k+e*(1-k);
+if(values.length<period)
+return null;
 
-return e;
-}
+let k=2/(period+1);
 
-function RSI(v,p=14){
+let ema=
+values
+.slice(0,period)
+.reduce((a,b)=>a+b,0)/period;
 
-if(v.length<=p)return null;
+for(let i=period;i<values.length;i++){
 
-let gain=0,loss=0;
-
-for(let i=v.length-p;i<v.length;i++){
-
-let d=v[i]-v[i-1];
-
-if(d>0)gain+=d;
-else loss-=d;
+ema=
+values[i]*k+
+ema*(1-k);
 
 }
 
-if(loss===0)return 100;
+return ema;
+}
 
-let rs=(gain/p)/(loss/p);
+
+/* RSI */
+
+function RSI(values,period=14){
+
+if(values.length<=period)
+return null;
+
+let gain=0;
+let loss=0;
+
+for(
+let i=values.length-period;
+i<values.length;
+i++
+){
+
+let difference=
+values[i]-values[i-1];
+
+if(difference>0)
+gain+=difference;
+else
+loss-=difference;
+
+}
+
+if(loss===0)
+return 100;
+
+let rs=gain/loss;
 
 return 100-(100/(1+rs));
+
 }
 
+
+/* ANALYSIS */
+
+function updateSignal(){
+
+if(candles.length<30)
+return;
+
+
+/* Ignore current unfinished candle */
+
+let closed=
+candles.slice(0,-1);
+
+let closes=
+closed.map(x=>x.close);
+
+let last=
+closed[closed.length-1];
+
+let ema9=
+EMA(closes,9);
+
+let ema21=
+EMA(closes,21);
+
+let rsi=
+RSI(closes,14);
+
+if(
+ema9===null ||
+ema21===null ||
+rsi===null
+)
+return;
+
+
+document.getElementById("price")
+.innerText=
+last.close.toFixed(2);
+
+document.getElementById("ema9")
+.innerText=
+ema9.toFixed(2);
+
+document.getElementById("ema21")
+.innerText=
+ema21.toFixed(2);
+
+document.getElementById("rsi")
+.innerText=
+rsi.toFixed(1);
+
+
+/* Support / resistance */
+
+let recent=
+closed.slice(-20,-1);
+
+let resistance=
+Math.max(
+...recent.map(x=>x.high)
+);
+
+let support=
+Math.min(
+...recent.map(x=>x.low)
+);
+
+
+let bullish=
+last.close>last.open;
+
+let bearish=
+last.close<last.open;
+
+
+let signal="WAIT";
+let reason="No complete confirmation";
+
+
+/* BUY */
+
+if(
+ema9>ema21 &&
+rsi>=52 &&
+rsi<=72 &&
+bullish &&
+last.close>resistance
+){
+
+signal="BUY";
+
+reason=
+"Bullish breakout confirmed";
+
+}
+
+
+/* SELL */
+
+else if(
+ema9<ema21 &&
+rsi>=28 &&
+rsi<=48 &&
+bearish &&
+last.close<support
+){
+
+signal="SELL";
+
+reason=
+"Bearish breakdown confirmed";
+
+}
+
+
+let box=
+document.getElementById("signal");
+
+box.innerText=signal;
+
+box.className=
+signal.toLowerCase();
+
+
+setStatus(
+reason+
+" • "+
+new Date(
+last.time*1000
+).toLocaleTimeString()
+);
+
+}
+
+
+/* CONNECT */
 
 function connect(){
 
-setStatus("Connecting to Deriv...");
+if(ws){
 
-ws=new WebSocket(
+try{
+ws.close();
+}catch(e){}
+
+}
+
+setStatus(
+"Connecting to Deriv..."
+);
+
+ws=
+new WebSocket(
 "wss://ws.binaryws.com/websockets/v3"
 );
 
-ws.onopen=()=>{
 
-setStatus("Connected. Loading GOLD...");
+/* CONNECTED */
 
-ws.send(JSON.stringify({
-
-active_symbols:"brief",
-
-product_type:"basic",
-
-req_id:1
-
-}));
-
-};
-
-
-ws.onmessage=(event)=>{
-
-let d;
-
-try{
-d=JSON.parse(event.data);
-}catch(e){
-return;
-}
-
-
-/* SHOW REAL ERROR */
-
-if(d.error){
+ws.onopen=function(){
 
 setStatus(
-"DERIV ERROR: "+
-(d.error.message||"Unknown error")
-);
-
-return;
-
-}
-
-
-/* FIND GOLD */
-
-if(d.msg_type==="active_symbols"){
-
-let list=d.active_symbols||[];
-
-let gold=list.find(x=>{
-
-let s=(
-x.symbol||
-x.underlying_symbol||
-""
-).toUpperCase();
-
-let n=(
-x.display_name||
-x.underlying_symbol_name||
-""
-).toUpperCase();
-
-return s.includes("XAU") ||
-n.includes("XAU") ||
-n.includes("GOLD");
-
-});
-
-
-if(!gold){
-
-setStatus("XAUUSD/GOLD not found.");
-
-return;
-
-}
-
-symbol=
-gold.symbol||
-gold.underlying_symbol;
-
-setStatus(
-"GOLD FOUND: "+symbol+
-" • Loading candles..."
+"Connected — loading GOLD..."
 );
 
 
-/* 1-MINUTE CANDLES */
+/* Historical 1-minute candles */
 
-ws.send(JSON.stringify({
+ws.send(
+JSON.stringify({
 
-ticks_history:symbol,
+ticks_history:SYMBOL,
 
 style:"candles",
 
@@ -218,18 +372,71 @@ end:"latest",
 
 subscribe:1,
 
+req_id:1
+
+})
+);
+
+
+/* Live price */
+
+ws.send(
+JSON.stringify({
+
+ticks:SYMBOL,
+
+subscribe:1,
+
 req_id:2
 
-}));
+})
+);
+
+};
+
+
+/* MESSAGE */
+
+ws.onmessage=function(event){
+
+let data;
+
+try{
+
+data=
+JSON.parse(event.data);
+
+}
+catch(e){
+
+return;
 
 }
 
 
-/* CANDLES */
+/* API ERROR */
 
-if(d.msg_type==="candles"){
+if(data.error){
 
-candles=(d.candles||[]).map(c=>({
+setStatus(
+"DERIV ERROR: "+
+data.error.message
+);
+
+return;
+
+}
+
+
+/* HISTORICAL CANDLES */
+
+if(
+data.msg_type==="candles"
+){
+
+candles=
+(data.candles||[])
+.map(c=>({
 
 time:Number(c.epoch),
 
@@ -243,163 +450,111 @@ close:Number(c.close)
 
 }));
 
-update();
+updateSignal();
 
 }
 
 
 /* LIVE CANDLE */
 
-if(d.msg_type==="ohlc"){
+if(
+data.msg_type==="ohlc" &&
+data.ohlc
+){
 
 let c={
 
-time:Number(d.ohlc.epoch),
+time:Number(data.ohlc.epoch),
 
-open:Number(d.ohlc.open),
+open:Number(data.ohlc.open),
 
-high:Number(d.ohlc.high),
+high:Number(data.ohlc.high),
 
-low:Number(d.ohlc.low),
+low:Number(data.ohlc.low),
 
-close:Number(d.ohlc.close)
+close:Number(data.ohlc.close)
 
 };
 
-let i=candles.findIndex(
+
+let index=
+candles.findIndex(
 x=>x.time===c.time
 );
 
-if(i>=0)
-candles[i]=c;
-else
+
+if(index>=0){
+
+candles[index]=c;
+
+}
+else{
+
 candles.push(c);
 
-candles=candles.slice(-200);
-
-update();
-
 }
 
-};
 
+candles=
+candles.slice(-200);
 
-ws.onerror=()=>{
-
-setStatus(
-"WebSocket error — check internet/Deriv connection"
-);
-
-};
-
-
-ws.onclose=()=>{
-
-setStatus(
-"Connection closed — reconnecting..."
-);
-
-setTimeout(connect,3000);
-
-};
+updateSignal();
 
 }
 
 
-function update(){
-
-if(candles.length<30)return;
-
-
-/* Ignore unfinished candle */
-
-let c=candles.slice(0,-1);
-
-let closes=c.map(x=>x.close);
-
-let last=c[c.length-1];
-
-let e9=EMA(closes,9);
-let e21=EMA(closes,21);
-let r=RSI(closes,14);
-
-document.getElementById("price")
-.innerText=last.close.toFixed(2);
-
-document.getElementById("ema9")
-.innerText=e9.toFixed(2);
-
-document.getElementById("ema21")
-.innerText=e21.toFixed(2);
-
-document.getElementById("rsi")
-.innerText=r.toFixed(1);
-
-
-/* Recent levels */
-
-let recent=c.slice(-20,-1);
-
-let resistance=Math.max(
-...recent.map(x=>x.high)
-);
-
-let support=Math.min(
-...recent.map(x=>x.low)
-);
-
-let bullish=last.close>last.open;
-let bearish=last.close<last.open;
-
-let signal="WAIT";
-let reason="No complete confirmation";
-
-
-/* BUY */
+/* LIVE PRICE */
 
 if(
-e9>e21 &&
-r>=52 &&
-r<=72 &&
-bullish &&
-last.close>resistance
+data.msg_type==="tick" &&
+data.tick
 ){
 
-signal="BUY";
-reason="Bullish breakout confirmed";
+let price=
+Number(data.tick.quote);
+
+document.getElementById("price")
+.innerText=
+price.toFixed(2);
 
 }
 
-
-/* SELL */
-
-else if(
-e9<e21 &&
-r>=28 &&
-r<=48 &&
-bearish &&
-last.close<support
-){
-
-signal="SELL";
-reason="Bearish breakdown confirmed";
-
-}
+};
 
 
-let box=document.getElementById("signal");
+/* ERROR */
 
-box.innerText=signal;
-box.className=signal.toLowerCase();
+ws.onerror=function(){
 
 setStatus(
-reason+
-" • "+
-new Date(last.time*1000)
-.toLocaleTimeString()
+"WebSocket error — connection unavailable"
 );
 
+};
+
+
+/* CLOSED */
+
+ws.onclose=function(){
+
+setStatus(
+"Connection closed — retrying..."
+);
+
+clearTimeout(reconnectTimer);
+
+reconnectTimer=
+setTimeout(
+connect,
+5000
+);
+
+};
+
 }
+
+
+/* START */
 
 connect();
 
